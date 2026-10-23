@@ -5,7 +5,7 @@ endif()
 
 find_package(BLAS)
 
-add_executable(serial serial.c)
+add_executable(serial serial.c matrix.c)
 
 add_executable(mpi mpi.c)
 target_link_libraries(mpi PRIVATE MPI::MPI_C)
