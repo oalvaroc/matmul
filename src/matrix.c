@@ -70,6 +70,37 @@ struct mat *mat_mult(struct mat *a, struct mat *b) {
 	return result;
 }
 
+void mat_get_block(const struct mat *mat, size_t row, size_t col, size_t bs,
+		   float *buf) {
+	assert(mat != NULL && mat->data != NULL);
+	assert(buf != NULL);
+	assert(bs > 0 && mat->order % bs == 0);
+	assert(row < mat->order / bs && col < mat->order / bs);
+
+	const size_t order = mat->order;
+	const float *src = mat->data + (row * bs) * order + col * bs;
+
+	for (size_t bl_row = 0; bl_row < bs; bl_row++) {
+		memcpy(buf + bl_row * bs, src + bl_row * order, bs * sizeof(float));
+	}
+}
+
+// Inverse of mat_get_block: copy the contiguous bs x bs buf into block
+// (row, col) of mat.
+void mat_set_block(struct mat *mat, size_t row, size_t col, size_t bs,
+		   const float *buf) {
+	assert(mat != NULL && mat->data != NULL);
+	assert(buf != NULL);
+	assert(bs > 0 && mat->order % bs == 0);
+	assert(row < mat->order / bs && col < mat->order / bs);
+
+	const size_t order = mat->order;
+	float *dst = mat->data + (row * bs) * order + col * bs;
+
+	for (size_t bl_row = 0; bl_row < bs; bl_row++) {
+		memcpy(dst + bl_row * order, buf + bl_row * bs, bs * sizeof(float));
+	}
+}
 int mat_dump(const struct mat *mat, const char *path) {
 	assert(mat != NULL && mat->data != NULL);
 	assert(path != NULL);
