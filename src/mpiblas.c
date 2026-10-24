@@ -1,4 +1,3 @@
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -205,15 +204,6 @@ static void worker(int order, size_t bs) {
 	free(task);
 }
 
-static float max_abs_diff(const struct mat *got, const struct mat *want) {
-	float max_diff = 0.0f;
-	for (size_t x = 0; x < want->order * want->order; x++) {
-		float d = fabsf(got->data[x] - want->data[x]);
-		max_diff = fmaxf(max_diff, d);
-	}
-	return max_diff;
-}
-
 int main(int argc, char **argv) {
 	// on failure the default error handler aborts before returning
 	MPI_Init(&argc, &argv);
@@ -243,17 +233,13 @@ int main(int argc, char **argv) {
 		struct mat *b = mat_rand(order);
 
 		double start = MPI_Wtime();
-		struct mat *parallel_result = distributed_mat_mult(a, b, block_size, size);
-		printf("parallel time: %.6fs\n", MPI_Wtime() - start);
+		struct mat *c = distributed_mat_mult(a, b, block_size, size);
+		double elapsed = MPI_Wtime() - start;
 
-		start = MPI_Wtime();
-		struct mat *serial_result = mat_mult(a, b);
+		printf("order=%d bs=%d procs=%d elapsed=%.6fs\n", order,
+		       block_size, size, elapsed);
 
-		printf("serial time: %.6fs\n", MPI_Wtime() - start);
-		printf("max abs diff: %g\n", max_abs_diff(parallel_result, serial_result));
-
-		mat_free(serial_result);
-		mat_free(parallel_result);
+		mat_free(c);
 		mat_free(a);
 		mat_free(b);
 	} else {
