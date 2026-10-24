@@ -57,13 +57,13 @@ struct mat *mat_mult(struct mat *a, struct mat *b) {
 		return NULL;
 	}
 
+	// row-k-col order walks b and result row by row, which is cache friendly
 	for (unsigned row = 0; row < order; row++) {
-		for (unsigned col = 0; col < order; col++) {
-			float sum = 0.0f;
-			for (unsigned k = 0; k < order; k++) {
-				 sum += a->data[order * row + k] * b->data[order * k + col];
+		for (unsigned k = 0; k < order; k++) {
+			const float a_row_k = a->data[row * order + k];
+			for (unsigned col = 0; col < order; col++) {
+				 result->data[row * order + col] += a_row_k * b->data[k * order + col];
 			}
-			result->data[order * row + col] = sum;
 		}
 	}
 
