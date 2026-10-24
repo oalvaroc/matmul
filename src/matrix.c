@@ -101,6 +101,22 @@ void mat_set_block(struct mat *mat, size_t row, size_t col, size_t bs,
 		memcpy(dst + bl_row * order, buf + bl_row * bs, bs * sizeof(float));
 	}
 }
+
+// c += a * b, where all three are contiguous bs x bs row-major blocks.
+void mat_block_mult_add(const float *a, const float *b, float *c, size_t bs) {
+	assert(a != NULL && b != NULL && c != NULL);
+
+	// row-k-col order walks b and c row by row, which is cache friendly
+	for (size_t row = 0; row < bs; row++) {
+		for (size_t k = 0; k < bs; k++) {
+			const float a_row_k = a[row * bs + k];
+			for (size_t col = 0; col < bs; col++) {
+				c[row * bs + col] += a_row_k * b[k * bs + col];
+			}
+		}
+	}
+}
+
 int mat_dump(const struct mat *mat, const char *path) {
 	assert(mat != NULL && mat->data != NULL);
 	assert(path != NULL);
