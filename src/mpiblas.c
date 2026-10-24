@@ -9,6 +9,7 @@
 #include "matrix.h"
 
 #define DEFAULT_BLOCK_SIZE 4
+#define DEFAULT_SEED 1
 
 // message tags: a label that lets the receiver tell kinds of messages apart
 #define TAG_TASK   1
@@ -21,19 +22,22 @@ static void help(char *prog) {
 	printf("Options:\n");
 	printf("    -n, --order   Square matrix order\n");
 	printf("    -s, --bs      Block size, must divide the order (default=4)\n");
+	printf("    -r, --seed    Seed for the matrix RNG (default=1)\n");
 	printf("    -h, --help    Show this message and exit\n");
 }
 
-static int parse_args(int argc, char **argv, int *order, int *block_size) {
+static int parse_args(int argc, char **argv, int *order, int *block_size,
+		      unsigned *seed) {
 	static struct option opts[] = {
 		{"help",  no_argument,       NULL, 'h'},
 		{"order", required_argument, NULL, 'n'},
 		{"bs",    required_argument, NULL, 's'},
+		{"seed",  required_argument, NULL, 'r'},
 		{NULL,    0,                 NULL,  0 }
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "hn:s:", opts, NULL)) > 0) {
+	while ((opt = getopt_long(argc, argv, "hn:s:r:", opts, NULL)) > 0) {
 		switch (opt) {
 		case 'h':
 			help(argv[0]);
@@ -51,6 +55,9 @@ static int parse_args(int argc, char **argv, int *order, int *block_size) {
 				printf("block size must be a number greater than 0\n");
 				return EXIT_FAILURE;
 			}
+			break;
+		case 'r':
+			*seed = strtoul(optarg, NULL, 10);
 			break;
 		case '?':
 			break;
@@ -211,7 +218,8 @@ int main(int argc, char **argv) {
 	// every rank receives the same argv, so every rank knows the order
 	int order = 0;
 	int block_size = DEFAULT_BLOCK_SIZE;
-	if (parse_args(argc, argv, &order, &block_size) != EXIT_SUCCESS) {
+	unsigned seed = DEFAULT_SEED;
+	if (parse_args(argc, argv, &order, &block_size, &seed) != EXIT_SUCCESS) {
 		MPI_Finalize();
 		return EXIT_FAILURE;
 	}
@@ -229,6 +237,9 @@ int main(int argc, char **argv) {
 	}
 
 	if (rank == 0) {
+		// only the master generates matrices, in the same order as the
+		// serial program, so the same seed gives the same A and B
+		srand(seed);
 		struct mat *a = mat_rand(order);
 		struct mat *b = mat_rand(order);
 
