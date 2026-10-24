@@ -4,7 +4,7 @@
 #include <getopt.h>
 
 #include <mpi.h>
-#include <openblas/cblas.h>
+#include <cblas.h>
 
 #include "matrix.h"
 
