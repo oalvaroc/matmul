@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <time.h>
 
 #include "matrix.h"
 
@@ -57,7 +58,17 @@ int main(int argc, char **argv) {
 	struct mat *a = mat_rand(order);
 	struct mat *b = mat_rand(order);
 
+	struct timespec start;
+	clock_gettime(CLOCK_MONOTONIC, &start);
+
 	struct mat *c = mat_mult(a, b);
+
+	struct timespec end;
+	clock_gettime(CLOCK_MONOTONIC, &end);
+
+	double delta_s = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
+	printf("order=%d elapsed=%.6lfs\n", order, delta_s);
 
 	mat_dump(a, "a.mat");
 	mat_dump(b, "b.mat");
