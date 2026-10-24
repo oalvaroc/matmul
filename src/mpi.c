@@ -22,21 +22,23 @@ static void help(char *prog) {
 	printf("    -n, --order   Square matrix order\n");
 	printf("    -s, --bs      Block size, must divide the order (default=4)\n");
 	printf("    -r, --seed    Seed for the matrix RNG (default=1)\n");
+	printf("    -o, --output  Write the result matrix to this file\n");
 	printf("    -h, --help    Show this message and exit\n");
 }
 
 static int parse_args(int argc, char **argv, int *order, int *block_size,
-		      unsigned *seed) {
+		      unsigned *seed, const char **output) {
 	static struct option opts[] = {
-		{"help",  no_argument,       NULL, 'h'},
-		{"order", required_argument, NULL, 'n'},
-		{"bs",    required_argument, NULL, 's'},
-		{"seed",  required_argument, NULL, 'r'},
-		{NULL,    0,                 NULL,  0 }
+		{"help",   no_argument,       NULL, 'h'},
+		{"order",  required_argument, NULL, 'n'},
+		{"bs",     required_argument, NULL, 's'},
+		{"seed",   required_argument, NULL, 'r'},
+		{"output", required_argument, NULL, 'o'},
+		{NULL,     0,                 NULL,  0 }
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "hn:s:r:", opts, NULL)) > 0) {
+	while ((opt = getopt_long(argc, argv, "hn:s:r:o:", opts, NULL)) > 0) {
 		switch (opt) {
 		case 'h':
 			help(argv[0]);
@@ -57,6 +59,9 @@ static int parse_args(int argc, char **argv, int *order, int *block_size,
 			break;
 		case 'r':
 			*seed = strtoul(optarg, NULL, 10);
+			break;
+		case 'o':
+			*output = optarg;
 			break;
 		case '?':
 			break;
@@ -217,7 +222,8 @@ int main(int argc, char **argv) {
 	int order = 0;
 	int block_size = DEFAULT_BLOCK_SIZE;
 	unsigned seed = DEFAULT_SEED;
-	if (parse_args(argc, argv, &order, &block_size, &seed) != EXIT_SUCCESS) {
+	const char *output = NULL;
+	if (parse_args(argc, argv, &order, &block_size, &seed, &output) != EXIT_SUCCESS) {
 		MPI_Finalize();
 		return EXIT_FAILURE;
 	}
@@ -234,6 +240,7 @@ int main(int argc, char **argv) {
 		return EXIT_FAILURE;
 	}
 
+	int ret = EXIT_SUCCESS;
 	if (rank == 0) {
 		// only the master generates matrices, in the same order as the
 		// serial program, so the same seed gives the same A and B
@@ -248,6 +255,11 @@ int main(int argc, char **argv) {
 		printf("order=%d bs=%d procs=%d elapsed=%.6fs\n", order,
 		       block_size, size, elapsed);
 
+		if (output && mat_dump(c, output) != 0) {
+			fprintf(stderr, "unable to write result to %s\n", output);
+			ret = EXIT_FAILURE;
+		}
+
 		mat_free(c);
 		mat_free(a);
 		mat_free(b);
@@ -256,5 +268,5 @@ int main(int argc, char **argv) {
 	}
 
 	MPI_Finalize();
-	return 0;
+	return ret;
 }
