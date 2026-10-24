@@ -8,6 +8,7 @@ struct mat {
 	float *data;
 };
 
+struct mat *mat_zero(unsigned order);
 struct mat *mat_rand(unsigned order);
 struct mat *mat_mult(struct mat *a, struct mat *b);
 
