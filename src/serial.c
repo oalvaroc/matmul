@@ -24,7 +24,7 @@ static void parse_args(int argc, char **argv, int *order) {
 		switch (opt) {
 		case 'h':
 			help(argv[0]);
-			break;
+			exit(EXIT_SUCCESS);
 		case 'n':
 			*order = atoi(optarg);
 			if (*order < 2) {
