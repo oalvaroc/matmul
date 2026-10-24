@@ -13,19 +13,22 @@ static void help(char *prog) {
 	printf("Options:\n");
 	printf("    -n, --order   Square matrix order\n");
 	printf("    -r, --seed    Seed for the matrix RNG (default=1)\n");
+	printf("    -o, --output  Write the result matrix to this file\n");
 	printf("    -h, --help    Show this message and exit\n");
 }
 
-static void parse_args(int argc, char **argv, int *order, unsigned *seed) {
+static void parse_args(int argc, char **argv, int *order, unsigned *seed,
+		       const char **output) {
 	static struct option opts[] = {
-		{"help",  no_argument,       NULL, 'h'},
-		{"order", required_argument, NULL, 'n'},
-		{"seed",  required_argument, NULL, 'r'},
-		{NULL,    0,                 NULL,  0 }
+		{"help",   no_argument,       NULL, 'h'},
+		{"order",  required_argument, NULL, 'n'},
+		{"seed",   required_argument, NULL, 'r'},
+		{"output", required_argument, NULL, 'o'},
+		{NULL,     0,                 NULL,  0 }
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "hn:r:", opts, NULL)) > 0) {
+	while ((opt = getopt_long(argc, argv, "hn:r:o:", opts, NULL)) > 0) {
 		switch (opt) {
 		case 'h':
 			help(argv[0]);
@@ -39,6 +42,9 @@ static void parse_args(int argc, char **argv, int *order, unsigned *seed) {
 			break;
 		case 'r':
 			*seed = strtoul(optarg, NULL, 10);
+			break;
+		case 'o':
+			*output = optarg;
 			break;
 		case '?':
 			break;
@@ -61,7 +67,8 @@ int main(int argc, char **argv) {
 
 	int order = 0;
 	unsigned seed = DEFAULT_SEED;
-	parse_args(argc, argv, &order, &seed);
+	const char *output = NULL;
+	parse_args(argc, argv, &order, &seed, &output);
 
 	srand(seed);
 	struct mat *a = mat_rand(order);
@@ -79,12 +86,14 @@ int main(int argc, char **argv) {
 
 	printf("order=%d elapsed=%.6lfs\n", order, delta_s);
 
-	mat_dump(a, "a.mat");
-	mat_dump(b, "b.mat");
-	mat_dump(c, "result.mat");
+	int ret = EXIT_SUCCESS;
+	if (output && mat_dump(c, output) != 0) {
+		fprintf(stderr, "unable to write result to %s\n", output);
+		ret = EXIT_FAILURE;
+	}
 
 	mat_free(a);
 	mat_free(b);
 	mat_free(c);
-	return 0;
+	return ret;
 }
