@@ -5,23 +5,27 @@
 
 #include "matrix.h"
 
+#define DEFAULT_SEED 1
+
 static void help(char *prog) {
 	printf("usage: %s OPTIONS\n\n", prog);
 	printf("Multiply two square matrices.\n\n");
 	printf("Options:\n");
 	printf("    -n, --order   Square matrix order\n");
+	printf("    -r, --seed    Seed for the matrix RNG (default=1)\n");
 	printf("    -h, --help    Show this message and exit\n");
 }
 
-static void parse_args(int argc, char **argv, int *order) {
+static void parse_args(int argc, char **argv, int *order, unsigned *seed) {
 	static struct option opts[] = {
 		{"help",  no_argument,       NULL, 'h'},
 		{"order", required_argument, NULL, 'n'},
+		{"seed",  required_argument, NULL, 'r'},
 		{NULL,    0,                 NULL,  0 }
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "hn:", opts, NULL)) > 0) {
+	while ((opt = getopt_long(argc, argv, "hn:r:", opts, NULL)) > 0) {
 		switch (opt) {
 		case 'h':
 			help(argv[0]);
@@ -32,6 +36,9 @@ static void parse_args(int argc, char **argv, int *order) {
 				printf("matrix order must be a number greater than 2\n");
 				exit(EXIT_FAILURE);
 			}
+			break;
+		case 'r':
+			*seed = strtoul(optarg, NULL, 10);
 			break;
 		case '?':
 			break;
@@ -53,8 +60,10 @@ int main(int argc, char **argv) {
 	}
 
 	int order = 0;
-	parse_args(argc, argv, &order);
+	unsigned seed = DEFAULT_SEED;
+	parse_args(argc, argv, &order, &seed);
 
+	srand(seed);
 	struct mat *a = mat_rand(order);
 	struct mat *b = mat_rand(order);
 
