@@ -7,8 +7,8 @@ find_package(BLAS)
 
 add_executable(serial serial.c matrix.c)
 
-add_executable(mpi mpi.c)
-target_link_libraries(mpi PRIVATE MPI::MPI_C)
+add_executable(mpi mpi.c matrix.c)
+target_link_libraries(mpi PRIVATE m PRIVATE MPI::MPI_C)
 
 add_executable(mpiblas mpiblas.c)
 target_link_libraries(mpiblas PRIVATE MPI::MPI_C PRIVATE BLAS::BLAS)
