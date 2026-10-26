@@ -14,6 +14,7 @@
 #define TAG_TASK   1
 #define TAG_RESULT 2
 #define TAG_STOP   3
+#define TAG_WARMUP 4
 
 static void help(char *prog) {
 	printf("usage: %s OPTIONS\n\n", prog);
@@ -119,6 +120,20 @@ static void send_stop(int w) {
 	MPI_Send(NULL, 0, MPI_FLOAT, w, TAG_STOP, MPI_COMM_WORLD);
 }
 
+// Exchange an empty message with every worker. MPI libraries such as UCX set
+// up the connection between two ranks lazily, on their first message, which
+// with many workers across nodes can take seconds. Doing it before the timer
+// starts keeps that setup out of the measurement.
+static void warm_up(int nprocs) {
+	for (int w = 1; w < nprocs; w++) {
+		MPI_Send(NULL, 0, MPI_FLOAT, w, TAG_WARMUP, MPI_COMM_WORLD);
+	}
+	for (int w = 1; w < nprocs; w++) {
+		MPI_Recv(NULL, 0, MPI_FLOAT, MPI_ANY_SOURCE, TAG_WARMUP,
+			 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+	}
+}
+
 static struct mat *distributed_mat_mult(struct mat *a, struct mat *b, size_t bs,
 				     int nprocs) {
 	const size_t q = a->order / bs;
@@ -197,6 +212,10 @@ static void worker(int order, size_t bs) {
 		if (status.MPI_TAG == TAG_STOP) {
 			break;
 		}
+		if (status.MPI_TAG == TAG_WARMUP) {
+			MPI_Send(NULL, 0, MPI_FLOAT, 0, TAG_WARMUP, MPI_COMM_WORLD);
+			continue;
+		}
 
 		const float *a_row = task;           // A[i][0..q-1]
 		const float *b_col = task + q * blk; // B[0..q-1][j]
@@ -249,11 +268,15 @@ int main(int argc, char **argv) {
 		struct mat *b = mat_rand(order);
 
 		double start = MPI_Wtime();
+		warm_up(size);
+		double warmup = MPI_Wtime() - start;
+
+		start = MPI_Wtime();
 		struct mat *c = distributed_mat_mult(a, b, block_size, size);
 		double elapsed = MPI_Wtime() - start;
 
-		printf("order=%d bs=%d procs=%d elapsed=%.6fs\n", order,
-		       block_size, size, elapsed);
+		printf("order=%d bs=%d procs=%d warmup=%.6fs elapsed=%.6fs\n",
+		       order, block_size, size, warmup, elapsed);
 
 		if (output && mat_dump(c, output) != 0) {
 			fprintf(stderr, "unable to write result to %s\n", output);
