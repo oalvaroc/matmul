@@ -29,9 +29,10 @@ GRID = "#e4e3df"
 
 
 def load(csv):
-    """All runs, and the completed ones with a measurable time."""
+    """All runs, and the median time of the completed repetitions per case."""
     runs = pd.read_csv(csv)
-    ok = runs[(runs["status"] == "ok") & (runs["elapsed_s"] > 0)].copy()
+    ok = runs[(runs["status"] == "ok") & (runs["elapsed_s"] > 0)]
+    ok = ok.groupby(["program", "order", "bs", "procs"], as_index=False)["elapsed_s"].median()
     return runs, ok
 
 
