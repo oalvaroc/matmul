@@ -195,8 +195,8 @@ def bench(runs, out, serial_ref):
         line(a1, d, "order", COLORS[prog], LABELS[prog])
         if prog != "serial":
             a2.plot(d["order"], d["speedup"], "-o", color=COLORS[prog], lw=2, ms=4)
-    a2.axhline(96, color=INK_MUTED, lw=1, ls="--")
-    a2.annotate("P = 96", (512, 96), xytext=(0, 3), textcoords="offset points",
+    a2.axhline(2 * CORES_PER_NODE, color=INK_MUTED, lw=1, ls="--")
+    a2.annotate("96 núcleos", (512, 2 * CORES_PER_NODE), xytext=(0, 3), textcoords="offset points",
                 fontsize=8, color=INK_MUTED)
     style(a1, "Tempo (melhor bloco)", "ordem n", "tempo (s)")
     style(a2, "Speedup sobre o serial", "ordem n", "speedup")
@@ -320,7 +320,7 @@ def scaling(runs, out, serial_ref):
         ax.bar([f"{p}×{t}" for p, t in zip(hy["procs"], hy["threads"])], hy["median"], 0.6,
                color=COLORS["mpiblas"], capsize=2, ecolor=INK_MUTED,
                yerr=[hy["median"] - hy["min"], hy["max"] - hy["median"]])
-        ax.tick_params(axis="x", labelsize=7)
+        ax.tick_params(axis="x", labelsize=7, rotation=45)
     style(ax, "BLAS, n=4096", "ranks × threads", "", logx=False, logy=False)
     save(fig, out, "fig_recursos.pdf")
 
