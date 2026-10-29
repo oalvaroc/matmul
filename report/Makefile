@@ -1,11 +1,10 @@
 # make                    figures, tables and relatorio.pdf
 # make RESULTS="../results/<job>/results.csv ..."
 #
-# By default, every results.csv under ../results with the columns of the
-# current ada-bench.sh (header starting with "experiment") is used.
+# By default, job 1034793 (Release build; earlier jobs ran -O0 builds).
 
 PYTHON  ?= ../.venv/bin/python
-RESULTS ?= $(shell grep -l '^experiment,' ../results/*/results.csv 2>/dev/null)
+RESULTS ?= ../results/1034793.ada/results.csv
 
 relatorio.pdf: relatorio.md include.lua build/.stamp
 	pandoc $< --columns=1000 --lua-filter include.lua --pdf-engine=tectonic -o $@
