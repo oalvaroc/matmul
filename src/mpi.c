@@ -24,25 +24,23 @@ static void help(char *prog) {
 	printf("    -n, --order   Square matrix order\n");
 	printf("    -s, --bs      Block size, must divide the order (default=4)\n");
 	printf("    -r, --seed    Seed for the matrix RNG (default=1)\n");
-	printf("    -o, --output  Write the result matrix to this file\n");
 	printf("    -c, --check   Check the result against the serial product\n");
 	printf("    -h, --help    Show this message and exit\n");
 }
 
 static int parse_args(int argc, char **argv, int *order, int *block_size,
-		      unsigned *seed, const char **output, bool *check) {
+		      unsigned *seed, bool *check) {
 	static struct option opts[] = {
 		{"help",   no_argument,       NULL, 'h'},
 		{"order",  required_argument, NULL, 'n'},
 		{"bs",     required_argument, NULL, 's'},
 		{"seed",   required_argument, NULL, 'r'},
-		{"output", required_argument, NULL, 'o'},
 		{"check",  no_argument,       NULL, 'c'},
 		{NULL,     0,                 NULL,  0 }
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "hn:s:r:o:c", opts, NULL)) > 0) {
+	while ((opt = getopt_long(argc, argv, "hn:s:r:c", opts, NULL)) > 0) {
 		switch (opt) {
 		case 'h':
 			help(argv[0]);
@@ -63,9 +61,6 @@ static int parse_args(int argc, char **argv, int *order, int *block_size,
 			break;
 		case 'r':
 			*seed = strtoul(optarg, NULL, 10);
-			break;
-		case 'o':
-			*output = optarg;
 			break;
 		case 'c':
 			*check = true;
@@ -268,9 +263,8 @@ int main(int argc, char **argv) {
 	int order = 0;
 	int block_size = DEFAULT_BLOCK_SIZE;
 	unsigned seed = DEFAULT_SEED;
-	const char *output = NULL;
 	bool check = false;
-	if (parse_args(argc, argv, &order, &block_size, &seed, &output, &check) != EXIT_SUCCESS) {
+	if (parse_args(argc, argv, &order, &block_size, &seed, &check) != EXIT_SUCCESS) {
 		MPI_Finalize();
 		return EXIT_FAILURE;
 	}
@@ -308,11 +302,6 @@ int main(int argc, char **argv) {
 
 		// after the timer stops, so it does not count towards elapsed
 		if (check && !check_result(a, b, c)) {
-			ret = EXIT_FAILURE;
-		}
-
-		if (output && mat_dump(c, output) != 0) {
-			fprintf(stderr, "unable to write result to %s\n", output);
 			ret = EXIT_FAILURE;
 		}
 

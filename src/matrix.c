@@ -5,8 +5,6 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -149,26 +147,6 @@ double mat_max_rel_err(const struct mat *mat, const struct mat *ref) {
 // the factor 10 is a safety margin.
 double mat_tolerance(size_t order) {
 	return 10 * sqrt(order) * FLT_EPSILON;
-}
-
-int mat_dump(const struct mat *mat, const char *path) {
-	assert(mat != NULL && mat->data != NULL);
-	assert(path != NULL);
-
-	FILE *f = fopen(path, "wb");
-	if (!f) {
-		return -1;
-	}
-
-	uint64_t order = mat->order;
-	size_t count = mat->order * mat->order;
-	if (fwrite(&order, sizeof(order), 1, f) != 1 ||
-	    fwrite(mat->data, sizeof(float), count, f) != count) {
-		fclose(f);
-		return -1;
-	}
-
-	return fclose(f) == 0 ? 0 : -1;
 }
 
 void mat_free(struct mat *mat) {

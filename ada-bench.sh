@@ -17,9 +17,8 @@
 #   hybrid  mpiblas on every core, as ranks x OpenBLAS threads
 #
 # Every case runs REPS times, one row per run in results/<job id>/results.csv
-# and the output of each run in logs/. The first repetition of serial and
-# blocks also writes its result matrix (*.mat), to compare the programs. The
-# first repetition of every mpi and mpiblas case also checks its result
+# and the output of each run in logs/. The first repetition of every mpi and
+# mpiblas case also checks its result
 # against the serial product (-c); the check is timed apart from elapsed, and
 # a failed check is recorded as status "wrong".
 #
@@ -74,12 +73,9 @@ run() {
 	for ((rep = 1; rep <= REPS; rep++)); do
 		local log="$OUT/logs/$name-r$rep.log"
 		local args=()
-		if [ "$rep" -eq 1 ] && [[ $exp == serial || $exp == blocks ]]; then
-			args=(-o "$OUT/$name.mat")
-		fi
 		# checking costs a serial multiplication, too slow for every run
 		if [ "$rep" -eq 1 ] && [ "$prog" != serial ]; then
-			args+=(-c)
+			args=(-c)
 		fi
 
 		OMP_NUM_THREADS=$threads timeout -k 30s "$TIMEOUT" \
