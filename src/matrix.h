@@ -18,6 +18,9 @@ void mat_set_block(struct mat *mat, size_t row, size_t col, size_t bs,
 		   const float *buf);
 void mat_block_mult_add(const float *a, const float *b, float *c, size_t bs);
 
+double mat_max_rel_err(const struct mat *mat, const struct mat *ref);
+double mat_tolerance(size_t order);
+
 int mat_dump(const struct mat *mat, const char *path);
 
 void mat_free(struct mat *mat);

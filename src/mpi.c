@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,22 +25,24 @@ static void help(char *prog) {
 	printf("    -s, --bs      Block size, must divide the order (default=4)\n");
 	printf("    -r, --seed    Seed for the matrix RNG (default=1)\n");
 	printf("    -o, --output  Write the result matrix to this file\n");
+	printf("    -c, --check   Check the result against the serial product\n");
 	printf("    -h, --help    Show this message and exit\n");
 }
 
 static int parse_args(int argc, char **argv, int *order, int *block_size,
-		      unsigned *seed, const char **output) {
+		      unsigned *seed, const char **output, bool *check) {
 	static struct option opts[] = {
 		{"help",   no_argument,       NULL, 'h'},
 		{"order",  required_argument, NULL, 'n'},
 		{"bs",     required_argument, NULL, 's'},
 		{"seed",   required_argument, NULL, 'r'},
 		{"output", required_argument, NULL, 'o'},
+		{"check",  no_argument,       NULL, 'c'},
 		{NULL,     0,                 NULL,  0 }
 	};
 
 	int opt;
-	while ((opt = getopt_long(argc, argv, "hn:s:r:o:", opts, NULL)) > 0) {
+	while ((opt = getopt_long(argc, argv, "hn:s:r:o:c", opts, NULL)) > 0) {
 		switch (opt) {
 		case 'h':
 			help(argv[0]);
@@ -63,6 +66,9 @@ static int parse_args(int argc, char **argv, int *order, int *block_size,
 			break;
 		case 'o':
 			*output = optarg;
+			break;
+		case 'c':
+			*check = true;
 			break;
 		case '?':
 			break;
@@ -132,6 +138,27 @@ static void warm_up(int nprocs) {
 		MPI_Recv(NULL, 0, MPI_FLOAT, MPI_ANY_SOURCE, TAG_WARMUP,
 			 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 	}
+}
+
+// Compares c with the product of the serial program, the reference, and
+// reports the error and whether it is within mat_tolerance. Its time is
+// reported apart: it is not part of the multiplication. Returns whether the
+// check passed.
+static bool check_result(struct mat *a, struct mat *b, const struct mat *c) {
+	double start = MPI_Wtime();
+
+	struct mat *ref = mat_mult(a, b);
+	if (!ref) {
+		fprintf(stderr, "unable to allocate the reference product\n");
+		return false;
+	}
+	const double max_rel = mat_max_rel_err(c, ref);
+	mat_free(ref);
+
+	const bool ok = max_rel <= mat_tolerance(c->order);
+	printf("check=%s max_rel_err=%.3e check_time=%.6fs\n",
+	       ok ? "ok" : "fail", max_rel, MPI_Wtime() - start);
+	return ok;
 }
 
 static struct mat *distributed_mat_mult(struct mat *a, struct mat *b, size_t bs,
@@ -242,7 +269,8 @@ int main(int argc, char **argv) {
 	int block_size = DEFAULT_BLOCK_SIZE;
 	unsigned seed = DEFAULT_SEED;
 	const char *output = NULL;
-	if (parse_args(argc, argv, &order, &block_size, &seed, &output) != EXIT_SUCCESS) {
+	bool check = false;
+	if (parse_args(argc, argv, &order, &block_size, &seed, &output, &check) != EXIT_SUCCESS) {
 		MPI_Finalize();
 		return EXIT_FAILURE;
 	}
@@ -277,6 +305,11 @@ int main(int argc, char **argv) {
 
 		printf("order=%d bs=%d procs=%d warmup=%.6fs elapsed=%.6fs\n",
 		       order, block_size, size, warmup, elapsed);
+
+		// after the timer stops, so it does not count towards elapsed
+		if (check && !check_result(a, b, c)) {
+			ret = EXIT_FAILURE;
+		}
 
 		if (output && mat_dump(c, output) != 0) {
 			fprintf(stderr, "unable to write result to %s\n", output);

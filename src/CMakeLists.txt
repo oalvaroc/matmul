@@ -12,6 +12,7 @@ pkg_check_modules(OPENBLAS REQUIRED IMPORTED_TARGET openblas)
 find_package(OpenMP REQUIRED COMPONENTS C)
 
 add_executable(serial serial.c matrix.c)
+target_link_libraries(serial PRIVATE m)
 
 add_executable(mpi mpi.c matrix.c)
 target_link_libraries(mpi PRIVATE m PRIVATE MPI::MPI_C)
