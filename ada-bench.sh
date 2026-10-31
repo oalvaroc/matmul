@@ -18,7 +18,10 @@
 #
 # Every case runs REPS times, one row per run in results/<job id>/results.csv
 # and the output of each run in logs/. The first repetition of serial and
-# blocks also writes its result matrix (*.mat), to compare the programs.
+# blocks also writes its result matrix (*.mat), to compare the programs. The
+# first repetition of every mpi and mpiblas case also checks its result
+# against the serial product (-c); the check is timed apart from elapsed, and
+# a failed check is recorded as status "wrong".
 #
 # Run some experiments: qsub -v "EXPERIMENTS=serial blocks" ada-bench.sh
 # Quick test:           qsub -l walltime=00:20:00 -v REPS=1 ada-bench.sh
@@ -44,7 +47,7 @@ export UCX_TLS=rc,sm,self
 OUT="results/${PBS_JOBID:-local-$(date +%Y%m%d-%H%M%S)}"
 CSV="$OUT/results.csv"
 mkdir -p "$OUT/logs"
-echo "experiment,program,order,bs,procs,nodes,threads,rep,warmup_s,elapsed_s,status" > "$CSV"
+echo "experiment,program,order,bs,procs,nodes,threads,rep,warmup_s,elapsed_s,status,check,max_rel_err,check_s" > "$CSV"
 # hardware and compiler flags, for the report
 lscpu > "$OUT/lscpu.txt"
 grep -E '^CMAKE_(BUILD_TYPE|C_FLAGS|C_COMPILER):' build/CMakeCache.txt > "$OUT/build.txt"
@@ -74,6 +77,10 @@ run() {
 		if [ "$rep" -eq 1 ] && [[ $exp == serial || $exp == blocks ]]; then
 			args=(-o "$OUT/$name.mat")
 		fi
+		# checking costs a serial multiplication, too slow for every run
+		if [ "$rep" -eq 1 ] && [ "$prog" != serial ]; then
+			args+=(-c)
+		fi
 
 		OMP_NUM_THREADS=$threads timeout -k 30s "$TIMEOUT" \
 			"${cmd[@]}" "${args[@]}" > "$log" 2>&1
@@ -83,12 +90,16 @@ run() {
 		124|137) state=timeout ;;  # 137: killed after -k
 		*)       state=error ;;
 		esac
-		local warmup elapsed
-		warmup=$(grep -o 'warmup=[0-9.]*' "$log" | cut -d= -f2)
-		elapsed=$(grep -o 'elapsed=[0-9.]*' "$log" | cut -d= -f2)
+		# value of key=value in the log, empty if missing
+		field() { grep -o "$1=[^ s]*" "$log" | head -n 1 | cut -d= -f2; }
+		local warmup elapsed check
+		warmup=$(field warmup)
+		elapsed=$(field elapsed)
+		check=$(field check)
+		[ "$check" = fail ] && state=wrong
 
-		echo "$exp,$prog,$order,$bs,$procs,$nodes,$threads,$rep,$warmup,$elapsed,$state" >> "$CSV"
-		echo "$name rep $rep: $state ${elapsed:+${elapsed}s}"
+		echo "$exp,$prog,$order,$bs,$procs,$nodes,$threads,$rep,$warmup,$elapsed,$state,$check,$(field max_rel_err),$(field check_time)" >> "$CSV"
+		echo "$name rep $rep: $state ${elapsed:+${elapsed}s}${check:+ check=$check}"
 		[ "$state" = ok ] || return
 	done
 }
