@@ -1,7 +1,9 @@
 ---
-title: "Multiplicação de matrizes: serial, MPI e MPI + OpenBLAS"
-author: "Álvaro Costa"
-date: "28 de outubro de 2026"
+title: "Multiplicação de matrizes distribuída: serial, MPI e MPI + OpenBLAS"
+author: |
+  Álvaro Costa - RA 246909\
+  Instituto de Computação\
+  UNICAMP
 lang: pt-BR
 documentclass: article
 fontsize: 10pt
@@ -10,176 +12,226 @@ numbersections: true
 colorlinks: true
 header-includes: |
   \usepackage{etoolbox}
-  \AtBeginEnvironment{longtable}{\footnotesize\setlength{\tabcolsep}{4pt}}
+  \AtBeginEnvironment{longtable}{\footnotesize\setlength{\tabcolsep}{3.5pt}}
   \usepackage{float}
   \floatplacement{figure}{H}
   \setlength{\parskip}{0.4em}
   \setlength{\abovecaptionskip}{2pt}
 ---
 
-# Versões e configuração experimental
+# Versões e configuração
 
-As três versões calculam $C = A \times B$ em precisão simples, com $A$ e $B$
-quadradas de ordem $n$:
+As três versões calculam $C = A \times B$ em precisão simples (`float`), com
+$A$ e $B$ quadradas de ordem $n$, geradas com a mesma semente (42).
 
-* **serial**: laço triplo na ordem linha–$k$–coluna;
-* **MPI**: $C$ dividido em $q^2$ blocos $b \times b$ ($q = n/b$). O rank 0
-  (mestre) envia a cada trabalhador, sob demanda, a linha de blocos de $A$ e
-  a coluna de blocos de $B$ de um $C_{ij}$ ($2qb^2$ floats, `MPI_Send`
-  bloqueante) e recebe o bloco calculado. Com $P$ processos há $W = P-1$
-  trabalhadores; o mestre não calcula;
-* **MPI + OpenBLAS**: igual, com `cblas_sgemm` no lugar do laço triplo.
+* **Serial**: laço triplo na ordem linha–$k$–coluna.
+* **MPI**: mestre–trabalhadores. $C$ é dividida em $q^2$ blocos $b \times b$
+  ($q = n/b$); cada bloco é uma tarefa. O mestre (rank 0) envia a cada
+  trabalhador livre a linha de blocos de $A$ e a coluna de blocos de $B$
+  necessárias e recebe o bloco de $C$ calculado. Com $P$ processos há
+  $W = P - 1$ trabalhadores; o mestre não calcula.
+* **MPI + OpenBLAS**: igual à MPI, com `cblas_sgemm` no trabalhador.
 
-Dois limites decorrem do desenho: no máximo $\min(q^2, W)$ trabalhadores
-ficam ocupados, e o mestre envia sozinho e em sequência $8n^2q$ bytes, pois
-cada bloco de $A$ e $B$ é reenviado $q$ vezes.
+![Esquema mestre–trabalhadores. Para calcular o bloco $C_{ij}$, o mestre
+empacota a linha $i$ de blocos de $A$ e a coluna $j$ de blocos de $B$ em uma
+única mensagem e a envia a um trabalhador livre, que devolve $C_{ij}$.](build/fig_esquema.pdf)
 
-**Ambiente.** Cluster ada (OpenPBS), até 2 nós, cada um com 2 AMD EPYC
-7443 (48 núcleos, 2,8 GHz, 8 domínios NUMA); GCC 12.2 com `-O3`
-(`CMAKE_BUILD_TYPE=Release`), Open MPI 5.0.6 sobre UCX
-(`UCX_TLS=rc,sm,self`), OpenBLAS 0.3.21 (OpenMP). Um processo por núcleo e
-`OMP_NUM_THREADS=1`, exceto onde indicado. Matrizes aleatórias com semente
-fixa, iguais nas três versões. A versão MPI reproduz o resultado do serial
-bit a bit; a OpenBLAS difere em até $5 \cdot 10^{-6}$ (relativo), efeito da
-ordem das somas.
+Como cada bloco de $A$ e $B$ é enviado $q$ vezes, o mestre movimenta sozinho
+$V = 8n^2q + 4n^2$ bytes. Esse volume cresce quando $b$ diminui, e é o que
+limita o desempenho, como mostram as seções seguintes.
 
-**Medição.** No serial, só a multiplicação (`clock_gettime`). Nas versões
-MPI, o rank 0 mede com `MPI_Wtime` desde o envio da primeira tarefa até a
-recepção do último bloco, incluindo empacotamento, comunicação e cálculo.
-Ficam de fora `MPI_Init`, geração das matrizes, escrita do resultado e o
-aquecimento das conexões UCX (uma mensagem vazia por trabalhador). Esse
-aquecimento é desprezível em um nó (mediana 0,1 ms), mas entre nós leva
-1,7 s com 48 processos e 5,1 s com 96, mais que a própria multiplicação.
+**Ambiente.** Cluster Lovelace, até 2 nós com 48 núcleos cada (2 AMD EPYC
+7443). GCC 12.2 `-O3`, Open MPI 5.0.6 (UCX), OpenBLAS 0.3.21. Processos sem
+fixação a núcleos; 1 thread por processo, exceto onde indicado.
 
-**Repetições.** Cada configuração foi executada 5 vezes (job 1034793, 420
-execuções, todas concluídas). Reportamos a **mediana**, o **coeficiente de
-variação** (CV) nas tabelas e o intervalo mínimo–máximo como barras de erro
-nas figuras.
+**O que é medido.** O tempo da multiplicação: no serial, `mat_mult`; nas
+versões MPI, a função distribuída inteira (envio das tarefas, cálculo,
+recepção de $C$), medida no rank 0 com `MPI_Wtime`. Ficam de fora a geração
+das matrizes, a verificação (seção 2) e o estabelecimento das conexões MPI,
+feito antes do cronômetro (até 5 s com dois nós).
 
-**Referências.** Na seção 2, speedup $S = T_\text{serial}(n)/T$ e eficiência
-$E = S/96$, os núcleos alocados. Esse $S$ soma o ganho do paralelismo e o do
-núcleo de cálculo: com um trabalhador, o laço em blocos da versão MPI faz
-12,6 GFLOP/s e a `sgemm` 55–75 GFLOP/s, contra 3,8 do serial. Por isso, nas
-seções 3 e 4 cada versão é comparada a ela mesma com um trabalhador
-($W = 1$, $P = 2$).
+**Repetições.** Cada uma das 84 configurações rodou 5 vezes (420 execuções,
+todas concluídas). A medida representativa é a mediana; a variabilidade
+é dada pelo coeficiente de variação (CV = desvio-padrão / média) nas
+tabelas e pelo intervalo mínimo–máximo na figura. O CV fica em geral abaixo
+de 5 %; os maiores (até 17 %) ocorrem com muitos processos ou threads por nó.
+
+**Speedup e eficiência.** Usamos duas referências:
+
+* $S_\text{ser} = T_\text{serial}(n) / T$: ganho sobre o serial com o mesmo
+  $n$, e $E_\text{ser} = S_\text{ser} / c$, com $c$ os núcleos ocupados
+  (processos × threads, mestre incluído). Inclui o ganho do núcleo de
+  cálculo: um trabalhador sozinho faz 12,6 GFLOP/s (MPI) e 55–75 GFLOP/s
+  (OpenBLAS), contra 3,8 GFLOP/s do serial; por isso $E_\text{ser}$ pode
+  passar de 100 %.
+* $S_1 = T(W{=}1) / T(W)$ e $E_1 = S_1 / W$: ganho sobre a mesma versão com
+  um trabalhador. Isola o efeito do paralelismo.
+
+# Validação dos resultados
+
+Com a opção `-c`, as versões MPI verificam o próprio resultado depois que o
+cronômetro para: o rank 0 calcula o produto com a função da versão serial (a
+referência) e mede o maior erro relativo entre os elementos,
+$e = \max_{ij} |c_{ij} - r_{ij}| / |r_{ij}|$. O programa imprime se passou, o
+erro e o tempo da verificação, que não entra no tempo medido. Como a
+verificação custa uma multiplicação serial, ela é feita na 1ª repetição de
+cada configuração.
+
+**Tolerância:** $e \leq 10\sqrt{n}\,\varepsilon$, com
+$\varepsilon = 2^{-23}$ a precisão do `float`. Cada elemento de $C$ é uma
+soma de $n$ produtos, e cada adição em `float` arredonda o resultado, com um
+erro da ordem de $\varepsilon$. Se todos os arredondamentos fossem para o
+mesmo lado, o erro acumulado seria $n\varepsilon$, mas esse é um pior caso
+raro: na prática eles vão para cima ou para baixo quase ao acaso e se
+cancelam em parte. É o comportamento de um passeio aleatório: depois de $n$
+passos de tamanho $\varepsilon$ em sentidos aleatórios, a distância típica
+do ponto de partida é $\sqrt{n}\,\varepsilon$, e não $n\varepsilon$. Essa é
+a estimativa usual do erro de somas longas em ponto flutuante; o fator 10 é
+margem de segurança. Um erro de programação (um bloco
+fora do lugar, um produto esquecido) gera erros de $10^{-4}$ ou mais, bem
+acima da tolerância.
+
+```{.include file="build/tab_validacao.md"}
+Versão serial (referência) e verificação. "Erro" é o maior $e$ entre as
+configurações com essa ordem; entre parênteses, aprovadas/verificadas.
+```
+
+Todas as 79 verificações passaram. A MPI reproduz o serial bit a bit
+($e = 0$), pois soma na mesma ordem. A OpenBLAS soma em outra ordem e erra
+no máximo $5{,}1 \cdot 10^{-6}$, 15 vezes abaixo da tolerância; seu erro
+cresce cerca de 1,4× a cada duplicação de $n$, como o modelo prevê
+($\sqrt{2}$).
 
 # Ordem da matriz e tamanho do bloco
 
-48 processos em 2 nós (24 por nó). A versão OpenBLAS usa 2 threads por rank
-e ocupa os 96 núcleos; a MPI usa metade deles. Serial: 0,0715 s, 0,563 s,
-4,48 s, 15,3 s e 36,5 s para $n$ = 512 a 4096 (CV $\leq$ 0,5 %,
-3,8 GFLOP/s): o tempo cresce com $n^3$.
+O serial cresce com $n^3$ (3,8 GFLOP/s constantes). A tabela 2 compara as
+versões paralelas com 48 processos em 2 nós (a OpenBLAS com 2 threads por
+processo) para cada combinação de $n$ e $b$.
 
-```{.include file="build/tab_bench.md"}
+```{.include file="build/tab_blocos.md"}
+48 processos, 2 nós. "Volume" é $V$, o que passa pelo mestre.
+$E_\text{ser}$ divide por 48 núcleos (MPI) ou 96 (BLAS, 2 threads). Em
+negrito, o melhor bloco de cada $n$.
 ```
 
-![Melhor bloco de cada ordem: tempo e speedup sobre o serial.](build/fig_ordem.pdf)
+O speedup cresce com $n$: de 7 para 66 (MPI) e de 3 para 76 (OpenBLAS);
+a eficiência por núcleo, de 14 % para 137 % e de 4 % para 80 %.
+O cálculo cresce com $n^3$, e a comunicação mais devagar; com $n = 512$ o
+tempo (10–20 ms) é quase todo distribuição. A OpenBLAS só vence a partir de
+$n = 2048$, e por pouco: com 47 trabalhadores o cálculo já não é o gargalo.
 
-![Tempo em função do bloco $b$.](build/fig_bloco.pdf)
+![Tempo em função do bloco $b$ para cada ordem $n$ (48 processos, 2 nós).
+Barras: mínimo e máximo das 5 repetições.](build/fig_bloco.pdf)
 
-**Ordem.** O speedup cresce com $n$ (MPI: 6,7 → 66; OpenBLAS: 3,6 → 79),
-pois o cálculo cresce com $n^3$ e a comunicação com $n^2q$. Até $n = 1024$ a
-versão MPI é a mais rápida; a `sgemm`, 4 vezes mais rápida por trabalhador,
-só compensa a partir de $n = 2048$ (0,101 s contra 0,151 s; 0,462 s contra
-0,550 s em $n = 4096$). O cálculo deixou de ser o gargalo.
-
-**Bloco.** Blocos pequenos são sempre ruins: $b = 64$ em $n = 4096$ faz o
-mestre enviar 8,6 GB (2,2–2,3 s nas duas versões, contra 0,46–0,55 s com
-$b = 512$). Na versão MPI, o bloco ótimo é o maior que ainda ocupa os 47
-trabalhadores: em $n = 2048$, $b = 512$ dá só 16 tarefas e perde para
-$b = 256$. Na OpenBLAS, o maior bloco vence sempre, e o tempo acompanha o
-volume enviado (1,07 GB em 0,462 s e 2,15 GB em 0,935 s com $n = 4096$:
-2,3 GB/s). A versão OpenBLAS tem variabilidade alta (CV até 41 %), e $b = 128$
-é mais lento que $b = 64$, sinal de threads disputando núcleos (seção 5).
+O bloco equilibra dois efeitos. Blocos pequenos multiplicam o volume:
+com $n = 4096$ e $b = 64$ o mestre movimenta 8,7 GB e as duas versões levam
+os mesmos 2,2 s, qualquer que seja o núcleo de cálculo. Blocos grandes
+deixam poucas tarefas: com $n = 2048$, $b = 512$ dá só 16 tarefas para 47
+trabalhadores. O melhor bloco é o maior que ainda ocupa os
+trabalhadores. Na OpenBLAS, $b = 128$ é sempre pior que $b = 64$,
+provavelmente pelas threads sem fixação a núcleos (seção 6).
 
 # Escalabilidade forte
 
-Carga de trabalho fixa e número de processos crescente (lei de Amdahl):
-$n$ fixo, com $q^2 = 256$ tarefas ($n = 2048$, $b = 128$; e $n = 4096$,
-$b = 256$ só na versão OpenBLAS), e $P$ de 2 a 96 (até 48 em um nó).
-Eficiência $E = T(1) / (W\,T(W))$, com $T(1)$ medido com $W = 1$.
+Problema fixo ($n = 2048$, $b = 128$; e $n = 4096$, $b = 256$ só na
+OpenBLAS), com $P$ de 2 a 96. Acima de 48 processos, dois nós.
 
-![Escalabilidade forte. A linha vertical separa um nó de dois.](build/fig_forte.pdf)
+![Escalabilidade forte. Linha vertical: passagem para dois nós. $S_1$ e
+$E_1$ são relativos à mesma versão com um trabalhador. Barras: mínimo e
+máximo das 5 repetições.](build/fig_forte.pdf)
 
 ```{.include file="build/tab_forte.md"}
+Tempo mediano em segundos (CV), speedup sobre o serial e eficiência sobre um
+trabalhador ($E_1 = S_1/W$).
 ```
 
-**A parte sequencial é o mestre.** Cada tarefa de $n = 2048$, $b = 128$
-leva 2 MB do mestre ao trabalhador. Na versão MPI o cálculo de uma tarefa
-leva 5,3 ms e o envio $\approx$ 0,57 ms, de modo que o mestre só alimenta
-cerca de 9 trabalhadores. A eficiência fica em 100 % até $W = 4$ e cai a
-58 % com 16, quando o tempo (0,146 s, 31× o serial) chega ao limite de
-enviar os 537 MB a 3,7 GB/s; 256 tarefas dividem-se exatamente entre 16
-trabalhadores, então a queda não é de granularidade. Pela lei de Amdahl, o
-speedup sobre $T(1)$ fica limitado a $1{,}36/0{,}146 \approx 9$. Com a
-`sgemm` (1,2 ms por tarefa) o limite chega antes: o melhor tempo é com
-**4 trabalhadores** nos dois tamanhos (0,0740 s em $n = 2048$; 0,453 s em
-$n = 4096$), e $E$ cai para 34 % e 48 % com 8.
+Até 4 trabalhadores a eficiência se mantém próxima de 100 %. Depois, o mestre
+limita. O melhor tempo da MPI é com 17 processos ($S_\text{ser} = 30$); o da
+OpenBLAS, com apenas 5 ($S_\text{ser} = 61$ e 82). Quanto mais rápido o
+cálculo, mais cedo o mestre não consegue alimentar os trabalhadores: uma tarefa
+leva 5,3 ms na MPI e 1,2 ms na OpenBLAS, e o mestre leva até 1 ms para
+enviá-la.
 
-**Mais processos pioram.** Além do ótimo, o tempo **aumenta**: em um nó, a
-versão MPI passa de 0,146 s (17 processos) a 0,308 s (33) e 0,318 s (48).
-Os trabalhadores ociosos esperam em `MPI_Recv` com espera ativa, e o mestre
-disputa com eles a memória e o transporte de memória compartilhada do nó.
-Com 65 processos em dois nós o tempo volta a cair (0,249 s); a seção 5
-isola esse efeito.
+Além do ótimo, mais processos pioram o tempo: a MPI vai de 0,150 s (17
+processos) a 0,324 s (48); a OpenBLAS com 33 a 96 processos é tão lenta
+quanto com um trabalhador. A vazão do mestre cai de 7,5 GB/s para cerca de
+2 GB/s quando 33 a 48 processos dividem seu nó: os trabalhadores ociosos
+esperam ativamente e disputam núcleos e memória com ele. Não é
+desbalanceamento: com $W = 32$ cada trabalhador fez exatamente 8 tarefas.
 
 # Escalabilidade fraca
 
-Carga de trabalho e número de processos crescem juntos (lei de
-Gustafson): o trabalho por trabalhador ($2n^3/W$ flops) fica constante com
-$n = 1024\sqrt[3]{W}$, $W \in \{1, 8, 27, 64\}$, $b = 256$. Eficiência
-$E = T(1)/T(W)$, igual ao speedup escalado $W\,T(1)/T(W)$ dividido por $W$.
-A comunicação, porém, cresce com $n^2q$: de 34 MB a 2,15 GB.
+O problema cresce com os trabalhadores: $n = 1024\sqrt[3]{W}$, de modo que
+cada trabalhador faz sempre 2,15 GFLOP ($b = 256$).
 
-![Escalabilidade fraca.](build/fig_fraca.pdf)
+![Escalabilidade fraca. Ideal: tempo constante e eficiência de 100 %.
+Barras: mínimo e máximo das 5 repetições.](build/fig_fraca.pdf)
 
 ```{.include file="build/tab_fraca.md"}
+Tempo mediano (CV) e eficiência $E_W = T(W{=}1)/T(W)$; ideal: 100 %.
 ```
 
-A versão MPI mantém o tempo até $W = 8$ (95 %) e cai para 47 % e 25 %; a
-OpenBLAS cai já em $W = 8$ (46 %) e chega a 5 %. Com $W \geq 27$ as duas
-versões levam praticamente o mesmo tempo (0,30–0,34 s e 0,61–0,64 s),
-qualquer que seja o núcleo de cálculo: o tempo é o do mestre enviando
-$8n^2q$ bytes a 2,7–3,5 GB/s. O cenário de Gustafson pressupõe que a parte
-sequencial não cresce com o problema; aqui ela cresce mais rápido que o
-cálculo por trabalhador, que é constante.
+A eficiência cai para 25 % (MPI) e 5 % (OpenBLAS) com 64 trabalhadores. O
+cálculo por trabalhador é constante, mas o volume no mestre cresce com
+$W$ (de 38 MB a 2,2 GB). Com $W \geq 27$ as duas versões levam o mesmo
+tempo: o do mestre enviando a 3–3,7 GB/s. A OpenBLAS cai antes porque seu
+cálculo é 5 vezes mais rápido.
 
 # Processos, núcleos e nós
 
-Esquerda e centro: 16, 32 e 48 processos ($n = 2048$, $b = 128$) em um nó ou
-divididos em dois. Direita: os 96 núcleos dos dois nós como ranks × threads
-OpenMP da OpenBLAS ($n = 4096$, $b = 256$).
+```{.include file="build/tab_nos.md"}
+Mesmos processos em 1 ou 2 nós ($n = 2048$, $b = 128$): tempo mediano (CV) e
+tempo de conexão com 2 nós (s, fora da medição).
+```
 
-![Mesmos processos em 1 ou 2 nós; divisão dos núcleos entre ranks e threads.](build/fig_recursos.pdf)
+**Nós.** Com 16 processos, um nó é melhor (comunicação local é mais barata).
+Com 32 e 48, dois nós são 1,6× a 2× mais rápidos, porque o nó do mestre fica
+menos cheio. O custo é a conexão entre nós, fora da medição: 0,45 s a 1,8 s.
 
-**Nós.** Com 16 processos um nó é melhor (MPI: 0,145 s contra 0,163 s;
-OpenBLAS: 0,143 s contra 0,196 s), pois a comunicação local é mais barata.
-Com 32 e 48, dois nós são 2,0× e 1,6× mais rápidos nas duas versões: o tempo
-de um nó com 32 processos (0,29–0,30 s) é o dobro do de 16, o que confirma a
-disputa no nó do mestre da seção 3. Mas dois nós custam 0,4–1,7 s de
-aquecimento das conexões, fora da medição.
+```{.include file="build/tab_hibrido.md"}
+Os 96 núcleos de dois nós como processos × threads (OpenBLAS, $n = 4096$,
+$b = 256$). "Máx/média tarefas": 1 = carga equilibrada.
+```
 
-**Ranks × threads.** 96 ranks com 1 thread é o melhor arranjo (0,691 s), e
-ainda é mais lento que 5 processos em um nó (0,453 s). Os arranjos com
-threads são irregulares (16 × 6: 10,7 s; 4 × 24: 1,70 s) e muito
-desbalanceados: em 16 × 6, 4 ranks fizeram 34–38 tarefas e 11 fizeram
-9–11. Como os ranks não foram fixados a núcleos, threads de ranks
-diferentes dividem núcleos e se atrasam; o resultado mede essa disputa, não o
-paralelismo híbrido. O mesmo efeito explica a variabilidade com 2 threads
-da seção 2.
+**Processos × threads.** 96 processos com 1 thread é o melhor arranjo
+(0,694 s), mas ainda mais lento que 5 processos em um nó (0,448 s). Os
+arranjos híbridos são até 15 vezes mais lentos e desbalanceados: sem
+fixação a núcleos, threads de processos diferentes disputam os mesmos
+núcleos.
 
-# Conclusão
+# Gargalos e conclusão
 
-Com `-O3`, o núcleo de cálculo deixou de ser o gargalo das duas versões
-paralelas. Ambas escalam bem só enquanto o mestre dá conta de alimentar os
-trabalhadores: eficiência forte de 100 % até 4 trabalhadores, melhor tempo
-com 5 (OpenBLAS) a 17 (MPI) processos e speedup máximo de 79× sobre o serial
-com 96 núcleos. A partir daí, o mestre centralizado, que envia sozinho e em
-sequência $8n^2q$ bytes e não calcula, é a parte sequencial de Amdahl e faz a
-eficiência fraca cair para 25 % (MPI) e 5 % (OpenBLAS). Com um núcleo de
-cálculo mais rápido, esse limite chega antes, e a OpenBLAS ganha pouco da
-MPI. Somam-se a disputa no nó do mestre, que faz mais processos aumentarem o
-tempo, a falta de afinidade entre threads e núcleos, e o custo de conectar
-processos entre nós. Melhorias: sobrepor empacotamento e envio
-(`MPI_Isend`), distribuir cada bloco uma única vez (SUMMA ou Cannon, sem
-mestre), esperar sem ocupar a CPU e fixar ranks e threads a núcleos.
+As duas versões paralelas estão corretas (79 de 79 verificações). O
+maior speedup sobre o serial foi 82×, com a OpenBLAS e só 5 processos
+($n = 4096$: 0,448 s contra 36,5 s). Mas o ganho vem mais do núcleo de
+cálculo (3,3× do laço em blocos, 14–20× da `sgemm`) do que da escala.
+
+Os gargalos, em ordem de impacto:
+
+1. **Mestre centralizado.** Um só processo envia $V = 8n^2q$ bytes, em
+   sequência e sem calcular. É a parte sequencial (lei de Amdahl) e cresce
+   com o problema, o que derruba também a escalabilidade fraca.
+2. **Disputa no nó do mestre.** Processos ociosos no mesmo nó reduzem a
+   vazão do mestre de 7,5 para cerca de 2 GB/s.
+3. **Granularidade.** Blocos pequenos multiplicam o volume; blocos grandes
+   deixam trabalhadores sem tarefa.
+4. **Sem fixação a núcleos.** Threads e processos disputam núcleos,
+   causando lentidão e variabilidade.
+
+**Melhorias sugeridas:** (i) trocar o mestre central por um algoritmo em
+que os processos trocam blocos entre si (SUMMA ou Cannon); (ii) sobrepor
+envio e cálculo com `MPI_Isend` e fazer o mestre calcular também; (iii)
+fixar processos e threads a núcleos (`--bind-to core`, `OMP_PROC_BIND`);
+(iv) usar o maior bloco $b$ que ainda dê ao menos uma tarefa por
+trabalhador.
+
+# Uso de Inteligência Artificial
+
+Este relatório foi elaborado com o apoio do assistente Claude Code (modelo Claude Opus 5.5, Anthropic). A ferramenta foi usada para:
+
+* criar o modelo do relatório;
+* revisar e formatar o texto escrito;
+* formatar tabelas a partir dos dados obtidos;
+* criar script de geração dos gráficos;
+
+O planejamento e a execução dos experimentos, assim como a coleta dos dados, foram feitos pelo autor. Todo o conteúdo gerado foi revisado pelo autor, que é responsável pelo texto final.

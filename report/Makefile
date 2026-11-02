@@ -1,17 +1,22 @@
 # make                    figures, tables and relatorio.pdf
-# make RESULTS="../results/<job>/results.csv ..."
+# make JOB=../results/<job>
 #
-# By default, job 1034793 (Release build; earlier jobs ran -O0 builds).
+# Job 1035570: Release build (-O3), 5 repetitions of every case, first one checked.
 
-PYTHON  ?= ../.venv/bin/python
-RESULTS ?= ../results/1034793.ada/results.csv
+PYTHON ?= $(abspath ../.venv/bin/python)
+JOB    ?= ../results/1035570.ada
 
-relatorio.pdf: relatorio.md include.lua build/.stamp
+relatorio.pdf: relatorio.md include.lua build/.analysis build/fig_esquema.pdf
 	pandoc $< --columns=1000 --lua-filter include.lua --pdf-engine=tectonic -o $@
 
-build/.stamp: ../scripts/report.py $(RESULTS)
-	$(PYTHON) ../scripts/report.py $(RESULTS) -o build
+build/.analysis: analysis.py $(JOB)/results.csv
+	@mkdir -p build
+	$(PYTHON) analysis.py $(JOB) -o build > build/analysis.log
 	touch $@
+
+build/fig_esquema.pdf: diagrama.py
+	@mkdir -p build
+	$(PYTHON) diagrama.py $@
 
 clean:
 	rm -rf build relatorio.pdf
