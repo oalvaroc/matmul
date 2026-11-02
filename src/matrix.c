@@ -1,10 +1,10 @@
 #include "matrix.h"
 
 #include <assert.h>
+#include <float.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -117,24 +117,36 @@ void mat_block_mult_add(const float *a, const float *b, float *c, size_t bs) {
 	}
 }
 
-int mat_dump(const struct mat *mat, const char *path) {
-	assert(mat != NULL && mat->data != NULL);
-	assert(path != NULL);
+// Largest relative error of an entry of mat against ref, |m - r| / |r|.
+double mat_max_rel_err(const struct mat *mat, const struct mat *ref) {
+	assert(mat != NULL && ref != NULL);
+	assert(mat->order == ref->order);
 
-	FILE *f = fopen(path, "wb");
-	if (!f) {
-		return -1;
+	const size_t size = mat->order * mat->order;
+	double max = 0;
+
+	for (size_t i = 0; i < size; i++) {
+		const double m = mat->data[i];
+		const double r = ref->data[i];
+		const double diff = fabs(m - r);
+		const double rel = r != 0 ? diff / fabs(r) : (diff != 0 ? INFINITY : 0);
+		if (rel > max) {
+			max = rel;
+		}
 	}
 
-	uint64_t order = mat->order;
-	size_t count = mat->order * mat->order;
-	if (fwrite(&order, sizeof(order), 1, f) != 1 ||
-	    fwrite(mat->data, sizeof(float), count, f) != count) {
-		fclose(f);
-		return -1;
-	}
+	return max;
+}
 
-	return fclose(f) == 0 ? 0 : -1;
+// Largest relative error per entry accepted between two products of this
+// order computed in single precision with the sums in different orders.
+//
+// Each entry is a sum of order products, and every addition rounds with a
+// relative error of up to FLT_EPSILON / 2, up or down almost at random. Like
+// a random walk, these errors add up to about sqrt(order) * FLT_EPSILON;
+// the factor 10 is a safety margin.
+double mat_tolerance(size_t order) {
+	return 10 * sqrt(order) * FLT_EPSILON;
 }
 
 void mat_free(struct mat *mat) {
